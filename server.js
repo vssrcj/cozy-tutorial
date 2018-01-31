@@ -5,50 +5,52 @@ var http = require('http'),
     bodyParser = require('body-parser'),
     db = new sqlite3.Database('cozy');
 
-/* We add configure directive to tell express to use Jade to
-   render templates */
-app.set('views', __dirname + '/public');
-app.set('view engine', 'pug');
+// app config
+(function() {
+   /* We add configure directive to tell express to use Jade to
+      render templates */
+   app.set('views', __dirname + '/public');
+   app.set('view engine', 'pug');
+
+   // Allows express to get data from POST requests
+   app.use(bodyParser.urlencoded({
+       extended: true
+   }));
+   app.use(bodyParser.json());
+})();
 
 
-const operations = ['all', 'get', 'post', 'put', 'delete'];
-operations.forEach(op => {
-   db[op + 'Async'] = function (sql) {
-      var that = this;
-      return new Promise(function (resolve, reject) {
-          that[op](sql, function (err, row) {
-              if (err) reject(err);
-              else resolve(row);
-          });
-      });
-   }
-})
+// set up async sqlite
+(function() {
+   const operations = ['all', 'get', 'run'];
+   operations.forEach(op => {
+      db[op + 'Async'] = function (sql) {
+         return new Promise((resolve, reject) => {
+            this[op](sql, function (err, row) {
+               if (err) reject(err);
+               else resolve(row);
+            });
+         });
+      }
+   });
+})();
 
-// Allows express to get data from POST requests
-app.use(bodyParser.urlencoded({
-    extended: true
-}));
-app.use(bodyParser.json());
 
 // Database initialization
-db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='bookmarks'", function(err, row) {
-    if(err !== null) {
-        console.log(err);
-    }
-    else if(row == null) {
-        db.run('CREATE TABLE "bookmarks" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "title" VARCHAR(255), url VARCHAR(255))', function(err) {
-            if(err !== null) {
-                console.log(err);
-            }
-            else {
-                console.log("SQL Table 'bookmarks' initialized.");
-            }
-        });
-    }
-    else {
-        console.log("SQL Table 'bookmarks' already initialized.");
-    }
-});
+(async function() {
+   try {
+      const row = await db.getAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='bookmarks'");
+   
+      if(row == null) {
+         await db.runAsync('CREATE TABLE "bookmarks" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "title" VARCHAR(255), url VARCHAR(255))');
+         console.log("SQL Table 'bookmarks' initialized.");
+      } else {
+         console.log("SQL Table 'bookmarks' already initialized.");
+      }
+   } catch (err) {
+      console.log(err);
+   }
+})();
 
 // We render the templates with the data
 app.get('/', async function(req, res) {
@@ -64,30 +66,24 @@ app.get('/', async function(req, res) {
 });
 
 // We define a new route that will handle bookmark creation
-app.post('/add', function(req, res) {
-    title = req.body.title;
-    url = req.body.url;
-    sqlRequest = "INSERT INTO 'bookmarks' (title, url) VALUES('" + title + "', '" + url + "')"
-    db.run(sqlRequest, function(err) {
-        if(err !== null) {
-            res.status(500).send("An error has occurred -- " + err);
-        }
-        else {
-            res.redirect('back');
-        }
-    });
+app.post('/add', async function({ body: { title, url } }, res) {
+   const sqlRequest = "INSERT INTO 'bookmarks' (title, url) VALUES('" + title + "', '" + url + "')"
+   try {
+      await db.runAsync(sqlRequest);
+      res.redirect('back');
+   } catch (err) {
+      res.status(500).send("An error has occurred -- " + err);
+   }
 });
 
 // We define another route that will handle bookmark deletion
-app.get('/delete/:id', function(req, res) {
-    db.run("DELETE FROM bookmarks WHERE id='" + req.params.id + "'", function(err) {
-        if(err !== null) {
-            res.status(500).send("An error has occurred -- " + err);
-        }
-        else {
-            res.redirect('back');
-        }
-    });
+app.get('/delete/:id', async function({ params: { id } }, res) {
+   try {
+      await db.runAsync("DELETE FROM bookmarks WHERE id='" + id + "'");
+      res.redirect('back');
+   } catch (err) {
+      res.status(500).send("An error has occurred -- " + err);
+   }
 });
 
 /* This will allow Cozy to run your app smoothly but
