@@ -8,7 +8,21 @@ var http = require('http'),
 /* We add configure directive to tell express to use Jade to
    render templates */
 app.set('views', __dirname + '/public');
-app.engine('.html', require('jade').__express);
+app.set('view engine', 'pug');
+
+
+const operations = ['all', 'get', 'post', 'put', 'delete'];
+operations.forEach(op => {
+   db[op + 'Async'] = function (sql) {
+      var that = this;
+      return new Promise(function (resolve, reject) {
+          that[op](sql, function (err, row) {
+              if (err) reject(err);
+              else resolve(row);
+          });
+      });
+   }
+})
 
 // Allows express to get data from POST requests
 app.use(bodyParser.urlencoded({
@@ -37,18 +51,16 @@ db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='bookmarks'",
 });
 
 // We render the templates with the data
-app.get('/', function(req, res) {
-
-    db.all('SELECT * FROM bookmarks ORDER BY title', function(err, row) {
-        if(err !== null) {
-            res.status(500).send("An error has occurred -- " + err);
-        }
-        else {
-            res.render('index.jade', {bookmarks: row}, function(err, html) {
-                res.status(200).send(html);
-            });
-        }
-    });
+app.get('/', async function(req, res) {
+   try {
+      const row = await db.allAsync('SELECT * FROM bookmarks ORDER BY title');
+      res.render('index.pug', { bookmarks: row }, function(err, html) {
+         if (err) throw err;
+         res.status(200).send(html);
+      });
+   } catch (err) {
+      res.status(500).send("An error has occurred -- " + err);
+   }
 });
 
 // We define a new route that will handle bookmark creation
